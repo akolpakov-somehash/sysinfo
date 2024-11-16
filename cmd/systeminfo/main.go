@@ -10,6 +10,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"sysinfo/internal/metrics"
+	"sysinfo/internal/metrics/cpu"
 	"sysinfo/pkg/formatter"
 )
 
@@ -39,7 +41,7 @@ type Dummy1 struct{}
 
 func (d *Dummy1) GetMetrics() (map[string]string, error) {
 	return map[string]string{
-		"name": "cpu",
+		"name": "CPU",
 		"cpu":  "100%",
 	}, nil
 }
@@ -48,7 +50,7 @@ type Dummy2 struct{}
 
 func (d *Dummy2) GetMetrics() (map[string]string, error) {
 	return map[string]string{
-		"name": "mem",
+		"name": "Memory",
 		"mem":  "100%",
 	}, nil
 }
@@ -58,10 +60,10 @@ func main() {
 	metricsFlag := metricsFilter{}
 	flag.Var(&metricsFlag, "filter", "comma-separated list of metrics, available: cpu,mem,net,disk,osinf")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error, fatal, panic)")
-	format := flag.String("format", "text", "output format (text, json)")
+	format := flag.String("format", formatter.TextFormat, "output format (text, json)")
 	flag.Parse()
 	if len(metricsFlag) == 0 {
-		metricsFlag = metricsFilter{"cpu", "mem", "net", "disk", "osinf"}
+		metricsFlag = metricsFilter{metrics.CPU, metrics.MEM, metrics.NET, metrics.DISK, metrics.OSINF}
 	}
 	lvl, err := zerolog.ParseLevel(*logLevel)
 	if err != nil {
@@ -73,7 +75,7 @@ func main() {
 	formatter := formatter.NewFormatter(*format)
 
 	providers := ProvidersMap{
-		"cpu": &Dummy1{},
+		"cpu": cpu.NewCpu(),
 		"mem": &Dummy2{},
 	}
 
@@ -98,7 +100,7 @@ func main() {
 	}
 
 	if started == 0 {
-		log.Info().Msg("No metrics to collect")
+		log.Warn().Msg("No metrics to collect")
 		return
 	}
 
@@ -108,6 +110,6 @@ func main() {
 		allMetrics[i] = metrics
 	}
 
-	fmt.Println("All metrics:")
+	fmt.Println("All metrics:\n----------------")
 	fmt.Println(formatter.Format(allMetrics))
 }
