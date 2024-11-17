@@ -4,31 +4,35 @@ import (
 	"fmt"
 	"strconv"
 
+	"sysinfo/internal/metrics"
+
 	"github.com/shirou/gopsutil/v4/cpu"
 )
 
-type Cpu struct{}
+// CPU is a struct that implements the metrics.Provider interface for CPU metrics.
+type CPU struct{}
 
-func (c *Cpu) GetMetrics() (map[string]string, error) {
+// GetMetrics returns CPU metrics.
+func (c *CPU) GetMetrics() ([]metrics.Metric, error) {
 	info, err := cpu.Info()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cpu.Info() failed: %w", err)
 	}
-	return map[string]string{
-		"name":      "CPU",
-		"cpu":       strconv.Itoa(int(info[0].CPU)),
-		"vendorId":  info[0].VendorID,
-		"family":    info[0].Family,
-		"model":     info[0].Model,
-		"stepping":  strconv.Itoa(int(info[0].Stepping)),
-		"cores":     strconv.Itoa(int(info[0].Cores)),
-		"modelName": info[0].ModelName,
-		"mhz":       strconv.FormatFloat(info[0].Mhz, 'f', -1, 64),
-		"cacheSize": strconv.Itoa(int(info[0].CacheSize)),
-		"flags":     fmt.Sprintf("%v", info[0].Flags),
+	if len(info) == 0 {
+		return nil, fmt.Errorf("no CPU information available")
+	}
+
+	return []metrics.Metric{
+		{Name: "CPU", Type: metrics.TypeTitle, Value: "CPU"},
+		{Name: "vendorId", Type: metrics.TypeStr, Value: info[0].VendorID},
+		{Name: "cores", Type: metrics.TypeInt, Value: strconv.Itoa(int(info[0].Cores))},
+		{Name: "modelName", Type: metrics.TypeStr, Value: info[0].ModelName},
+		{Name: "mhz", Type: metrics.TypeStr, Value: fmt.Sprintf("%.2f Mhz", info[0].Mhz)},
+		{Name: "cacheSize", Type: metrics.TypeStr, Value: fmt.Sprintf("%d Kb", info[0].CacheSize)},
 	}, nil
 }
 
-func NewCpu() *Cpu {
-	return &Cpu{}
+// NewCPU creates a new CPU instance.
+func NewCPU() *CPU {
+	return &CPU{}
 }

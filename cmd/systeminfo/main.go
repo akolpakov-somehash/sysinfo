@@ -12,104 +12,125 @@ import (
 
 	"sysinfo/internal/metrics"
 	"sysinfo/internal/metrics/cpu"
+	"sysinfo/internal/metrics/memory"
 	"sysinfo/pkg/formatter"
 )
 
-type MetricProvider interface {
-	GetMetrics() (map[string]string, error)
-}
-
-type ProvidersMap map[string]MetricProvider
-
+// metricsFilter is a custom flag type for metrics filter.
 type metricsFilter []string
 
+// String returns a string representation of the metrics filter.
 func (m *metricsFilter) String() string {
 	return fmt.Sprint(*m)
 }
 
+// Set sets the metrics filter value.
 func (m *metricsFilter) Set(value string) error {
-	if len(*m) > 0 {
-		return errors.New("metrics filter already set")
-	}
 	for _, f := range strings.Split(value, ",") {
 		*m = append(*m, f)
 	}
 	return nil
 }
 
-type Dummy1 struct{}
+// defaultMetrics is a list of default metrics to collect.
+var defaultMetrics = metricsFilter{metrics.CPU, metrics.Mem, metrics.Net, metrics.Disk, metrics.OSInfo}
 
-func (d *Dummy1) GetMetrics() (map[string]string, error) {
-	return map[string]string{
-		"name": "CPU",
-		"cpu":  "100%",
-	}, nil
-}
-
-type Dummy2 struct{}
-
-func (d *Dummy2) GetMetrics() (map[string]string, error) {
-	return map[string]string{
-		"name": "Memory",
-		"mem":  "100%",
-	}, nil
-}
-
+// main is the entry point of the program.
 func main() {
+	metricsFlag, logLevel, format := parseFlags()
+	initializeLogging(logLevel)
+	formatter, err := initializeFormatter(format)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to initialize formatter")
+		return
+	}
+	providers := initializeProviders()
+	allMetrics, err := collectMetrics(providers, metricsFlag)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to collect metrics")
+		return
+	}
+	outputMetrics(allMetrics, formatter)
+}
 
+// parseFlags parses command line flags.
+func parseFlags() (metricsFilter, string, string) {
 	metricsFlag := metricsFilter{}
 	flag.Var(&metricsFlag, "filter", "comma-separated list of metrics, available: cpu,mem,net,disk,osinf")
 	logLevel := flag.String("log-level", "info", "log level (debug, info, warn, error, fatal, panic)")
 	format := flag.String("format", formatter.TextFormat, "output format (text, json)")
 	flag.Parse()
 	if len(metricsFlag) == 0 {
-		metricsFlag = metricsFilter{metrics.CPU, metrics.MEM, metrics.NET, metrics.DISK, metrics.OSINF}
+		metricsFlag = append(metricsFilter{}, defaultMetrics...)
 	}
-	lvl, err := zerolog.ParseLevel(*logLevel)
+	return metricsFlag, *logLevel, *format
+}
+
+// initializeLogging initializes logging.
+func initializeLogging(logLevel string) {
+	lvl, err := zerolog.ParseLevel(logLevel)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to parse log level")
+		log.Fatal().Err(err).Msg("failed to parse log level")
 	}
 	zerolog.TimeFieldFormat = time.RFC3339
 	zerolog.SetGlobalLevel(lvl)
+}
 
-	formatter := formatter.NewFormatter(*format)
-
-	providers := ProvidersMap{
-		"cpu": cpu.NewCpu(),
-		"mem": &Dummy2{},
+// initializeProviders initializes metric providers.
+func initializeProviders() metrics.ProvidersMap {
+	return metrics.ProvidersMap{
+		metrics.CPU: cpu.NewCPU(),
+		metrics.Mem: memory.NewMemory(),
 	}
+}
 
-	m := make(chan map[string]string, len(metricsFlag))
+// collectMetrics collects metrics from providers.
+func collectMetrics(providers metrics.ProvidersMap, metricsFlag metricsFilter) ([][]metrics.Metric, error) {
+	m := make(chan []metrics.Metric, len(metricsFlag))
 	started := 0
 	for _, metric := range metricsFlag {
+		metric := metric
 		provider, ok := providers[metric]
 		if !ok {
-			log.Warn().Str("metric", metric).Msg("Unknown metric")
+			log.Warn().Str("metric", metric).Msg("unknown metric")
 			continue
 		}
 		started++
-		go func() {
-			metrics, err := provider.GetMetrics()
+		go func(metric string, provider metrics.MetricProvider) {
+			metricsResult, err := provider.GetMetrics()
 			if err != nil {
-				log.Error().Err(err).Str("metric", metric).Msg("Failed to get metrics")
-				m <- map[string]string{"error": err.Error()}
+				log.Error().Err(err).Str("metric", metric).Msg("failed to get metrics")
+				m <- []metrics.Metric{{Name: metric, Type: metrics.TypeTitle, Value: "failed to get metrics"}}
 				return
 			}
-			m <- metrics
-		}()
+			m <- metricsResult
+		}(metric, provider)
 	}
 
 	if started == 0 {
-		log.Warn().Msg("No metrics to collect")
+		return nil, errors.New("no metrics to collect")
+	}
+
+	allMetrics := make([][]metrics.Metric, started)
+	for i := 0; i < started; i++ {
+		metricsResult := <-m
+		allMetrics[i] = metricsResult
+	}
+	return allMetrics, nil
+}
+
+// initializeFormatter initializes formatter.
+func initializeFormatter(format string) (formatter.Formatter, error) {
+	return formatter.NewFormatter(format)
+}
+
+// outputMetrics outputs metrics.
+func outputMetrics(metrics [][]metrics.Metric, formatter formatter.Formatter) {
+	formattedMetrics, err := formatter.Format(metrics)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to format metrics")
 		return
 	}
-
-	allMetrics := make([]map[string]string, started)
-	for i := 0; i < started; i++ {
-		metrics := <-m
-		allMetrics[i] = metrics
-	}
-
 	fmt.Println("All metrics:\n----------------")
-	fmt.Println(formatter.Format(allMetrics))
+	fmt.Println(formattedMetrics)
 }
