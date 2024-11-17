@@ -22,7 +22,7 @@
 
 1. Clone the repository:
    ```sh
-   git clone <repository-url>
+   git clone git@github.com:akolpakov-somehash/sysinfo.git
    ```
 
 2. Navigate to the project directory:
