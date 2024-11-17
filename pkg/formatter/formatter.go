@@ -44,7 +44,6 @@ type TextFormatter struct {
 }
 
 // Format formats the given metrics data into a human-readable text string.
-// Format formats the given metrics data into a human-readable text string.
 func (t *TextFormatter) Format(groups []metrics.MetricGroup, prefix string) (string, error) {
 	var resultBuilder strings.Builder
 	indent := prefix

@@ -6,11 +6,14 @@ import (
 
 	"sysinfo/internal/metrics"
 
+	"github.com/rs/zerolog/log"
 	"github.com/shirou/gopsutil/v4/disk"
 )
 
+// Disk is a struct that implements the metrics.Provider interface for disk metrics.
 type Disk struct{}
 
+// GetMetrics returns disk metrics.
 func (d *Disk) GetMetrics() (metrics.MetricGroup, error) {
 	parts, err := disk.Partitions(false)
 	if err != nil {
@@ -22,9 +25,19 @@ func (d *Disk) GetMetrics() (metrics.MetricGroup, error) {
 		Groups: []metrics.MetricGroup{},
 	}
 	for _, part := range parts {
+		if part.Fstype == "" {
+			continue
+		}
 		usage, err := disk.Usage(part.Mountpoint)
 		if err != nil {
-			return metrics.MetricGroup{}, fmt.Errorf("disk.Usage() failed: %w", err)
+			diskMetrics.Groups = append(diskMetrics.Groups, metrics.MetricGroup{
+				Title: part.Mountpoint,
+				Metrics: []metrics.Metric{
+					{Name: "error", Type: metrics.TypeStr, Value: fmt.Sprintf("failed to get disk usage: %v", err)},
+				},
+			})
+			log.Error().Err(err).Str("mountpoint", part.Mountpoint).Msg("failed to get disk usage")
+			continue
 		}
 
 		partitionMetrics := []metrics.Metric{
@@ -46,6 +59,7 @@ func (d *Disk) GetMetrics() (metrics.MetricGroup, error) {
 	return diskMetrics, nil
 }
 
+// NewDisk creates a new Disk instance.
 func NewDisk() *Disk {
 	return &Disk{}
 }
