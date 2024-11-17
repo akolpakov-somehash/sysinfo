@@ -15,7 +15,7 @@ import (
 
 // Formatter is an interface that defines a method to format metrics data.
 type Formatter interface {
-	Format([][]metrics.Metric) (string, error)
+	Format(groups []metrics.MetricGroup, prefix string) (string, error)
 }
 
 const (
@@ -29,8 +29,8 @@ const (
 type JSONFormatter struct{}
 
 // Format formats the metrics data to JSON format.
-func (j *JSONFormatter) Format(data [][]metrics.Metric) (string, error) {
-	result, err := json.Marshal(data)
+func (j *JSONFormatter) Format(groups []metrics.MetricGroup, prefix string) (string, error) {
+	result, err := json.Marshal(groups)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal data to JSON: %w", err)
 	}
@@ -44,38 +44,47 @@ type TextFormatter struct {
 }
 
 // Format formats the given metrics data into a human-readable text string.
-func (t *TextFormatter) Format(data [][]metrics.Metric) (string, error) {
-	resultBuilder := strings.Builder{}
-	sectionBuilder := strings.Builder{}
-	for _, metricsList := range data {
-		for _, m := range metricsList {
-			if m.Type == metrics.TypeTitle {
-				tempStr := sectionBuilder.String()
-				sectionBuilder.Reset()
-				sectionBuilder.WriteString(fmt.Sprintf("Metrics for %s\n-------\n", m.Value))
-				sectionBuilder.WriteString(tempStr)
-				continue
-			}
+// Format formats the given metrics data into a human-readable text string.
+func (t *TextFormatter) Format(groups []metrics.MetricGroup, prefix string) (string, error) {
+	var resultBuilder strings.Builder
+	indent := prefix
+
+	for _, group := range groups {
+		if group.Title != "" {
+			title := t.titleCaser.String(group.Title)
+			resultBuilder.WriteString(fmt.Sprintf("%s%s\n", indent, title))
+			underline := strings.Repeat("-", len(title))
+			resultBuilder.WriteString(fmt.Sprintf("%s%s\n", indent, underline))
+		}
+
+		for _, m := range group.Metrics {
 			v := m.Value
-			if m.Type == metrics.TypeByte {
+			switch m.Type {
+			case metrics.TypeByte:
 				vUint, err := strconv.ParseUint(m.Value, 10, 64)
 				if err != nil {
 					return "", fmt.Errorf("failed to parse byte value '%s': %w", m.Value, err)
 				}
 				v = humanize.Bytes(vUint)
-			}
-			if m.Type == metrics.TypePer {
+			case metrics.TypePer:
 				vFloat, err := strconv.ParseFloat(m.Value, 64)
 				if err != nil {
 					return "", fmt.Errorf("failed to parse percentage value '%s': %w", m.Value, err)
 				}
 				v = fmt.Sprintf("%.2f%%", vFloat)
 			}
-			fmt.Fprintf(&sectionBuilder, "%s: %s\n", t.splitAndTitleCase(m.Name), v)
+			metricName := t.splitAndTitleCase(m.Name)
+			resultBuilder.WriteString(fmt.Sprintf("%s%-15s : %s\n", indent, metricName, v))
 		}
-		sectionBuilder.WriteString("\n")
-		resultBuilder.WriteString(sectionBuilder.String())
-		sectionBuilder.Reset()
+
+		if len(group.Groups) > 0 {
+			subResult, err := t.Format(group.Groups, indent+"  ")
+			if err != nil {
+				return "", err
+			}
+			resultBuilder.WriteString(subResult)
+		}
+		resultBuilder.WriteString("\n")
 	}
 	return resultBuilder.String(), nil
 }

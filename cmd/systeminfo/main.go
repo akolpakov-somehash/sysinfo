@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"strings"
@@ -12,7 +11,9 @@ import (
 
 	"sysinfo/internal/metrics"
 	"sysinfo/internal/metrics/cpu"
+	"sysinfo/internal/metrics/disk"
 	"sysinfo/internal/metrics/memory"
+
 	"sysinfo/pkg/formatter"
 )
 
@@ -79,14 +80,15 @@ func initializeLogging(logLevel string) {
 // initializeProviders initializes metric providers.
 func initializeProviders() metrics.ProvidersMap {
 	return metrics.ProvidersMap{
-		metrics.CPU: cpu.NewCPU(),
-		metrics.Mem: memory.NewMemory(),
+		metrics.CPU:  cpu.NewCPU(),
+		metrics.Mem:  memory.NewMemory(),
+		metrics.Disk: disk.NewDisk(),
 	}
 }
 
 // collectMetrics collects metrics from providers.
-func collectMetrics(providers metrics.ProvidersMap, metricsFlag metricsFilter) ([][]metrics.Metric, error) {
-	m := make(chan []metrics.Metric, len(metricsFlag))
+func collectMetrics(providers metrics.ProvidersMap, metricsFlag metricsFilter) ([]metrics.MetricGroup, error) {
+	m := make(chan metrics.MetricGroup, len(metricsFlag))
 	started := 0
 	for _, metric := range metricsFlag {
 		metric := metric
@@ -100,7 +102,7 @@ func collectMetrics(providers metrics.ProvidersMap, metricsFlag metricsFilter) (
 			metricsResult, err := provider.GetMetrics()
 			if err != nil {
 				log.Error().Err(err).Str("metric", metric).Msg("failed to get metrics")
-				m <- []metrics.Metric{{Name: metric, Type: metrics.TypeTitle, Value: "failed to get metrics"}}
+				m <- metrics.MetricGroup{Metrics: []metrics.Metric{{Name: metric, Type: metrics.TypeStr, Value: "failed to get metrics"}}}
 				return
 			}
 			m <- metricsResult
@@ -108,10 +110,10 @@ func collectMetrics(providers metrics.ProvidersMap, metricsFlag metricsFilter) (
 	}
 
 	if started == 0 {
-		return nil, errors.New("no metrics to collect")
+		return nil, fmt.Errorf("no metrics to collect")
 	}
 
-	allMetrics := make([][]metrics.Metric, started)
+	allMetrics := make([]metrics.MetricGroup, started)
 	for i := 0; i < started; i++ {
 		metricsResult := <-m
 		allMetrics[i] = metricsResult
@@ -125,8 +127,8 @@ func initializeFormatter(format string) (formatter.Formatter, error) {
 }
 
 // outputMetrics outputs metrics.
-func outputMetrics(metrics [][]metrics.Metric, formatter formatter.Formatter) {
-	formattedMetrics, err := formatter.Format(metrics)
+func outputMetrics(metrics []metrics.MetricGroup, formatter formatter.Formatter) {
+	formattedMetrics, err := formatter.Format(metrics, "")
 	if err != nil {
 		log.Error().Err(err).Msg("failed to format metrics")
 		return

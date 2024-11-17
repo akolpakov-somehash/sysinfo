@@ -13,22 +13,24 @@ import (
 type CPU struct{}
 
 // GetMetrics returns CPU metrics.
-func (c *CPU) GetMetrics() ([]metrics.Metric, error) {
+func (c *CPU) GetMetrics() (metrics.MetricGroup, error) {
 	info, err := cpu.Info()
 	if err != nil {
-		return nil, fmt.Errorf("cpu.Info() failed: %w", err)
+		return metrics.MetricGroup{}, fmt.Errorf("cpu.Info() failed: %w", err)
 	}
 	if len(info) == 0 {
-		return nil, fmt.Errorf("no CPU information available")
+		return metrics.MetricGroup{}, fmt.Errorf("no CPU information available")
 	}
 
-	return []metrics.Metric{
-		{Name: "CPU", Type: metrics.TypeTitle, Value: "CPU"},
-		{Name: "vendorId", Type: metrics.TypeStr, Value: info[0].VendorID},
-		{Name: "cores", Type: metrics.TypeInt, Value: strconv.Itoa(int(info[0].Cores))},
-		{Name: "modelName", Type: metrics.TypeStr, Value: info[0].ModelName},
-		{Name: "mhz", Type: metrics.TypeStr, Value: fmt.Sprintf("%.2f Mhz", info[0].Mhz)},
-		{Name: "cacheSize", Type: metrics.TypeStr, Value: fmt.Sprintf("%d Kb", info[0].CacheSize)},
+	return metrics.MetricGroup{
+		Title: "CPU",
+		Metrics: []metrics.Metric{
+			{Name: "vendorId", Type: metrics.TypeStr, Value: info[0].VendorID},
+			{Name: "cores", Type: metrics.TypeInt, Value: strconv.Itoa(int(info[0].Cores))},
+			{Name: "modelName", Type: metrics.TypeStr, Value: info[0].ModelName},
+			{Name: "mhz", Type: metrics.TypeStr, Value: fmt.Sprintf("%.2f Mhz", info[0].Mhz)},
+			{Name: "cacheSize", Type: metrics.TypeStr, Value: fmt.Sprintf("%d Kb", info[0].CacheSize)},
+		},
 	}, nil
 }
 

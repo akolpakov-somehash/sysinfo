@@ -19,7 +19,6 @@ const (
 	TypeStr
 	TypePer
 	TypeAny
-	TypeTitle
 )
 
 // Metric represents a single metric.
@@ -29,10 +28,16 @@ type Metric struct {
 	Value string
 }
 
+type MetricGroup struct {
+	Title   string
+	Metrics []Metric
+	Groups  []MetricGroup
+}
+
 // MetricProvider defines an interface for fetching metrics.
 type MetricProvider interface {
 	// GetMetrics retrieves a slice of metrics or an error if the operation fails.
-	GetMetrics() ([]Metric, error)
+	GetMetrics() (MetricGroup, error)
 }
 
 // ProvidersMap is a map of metric providers.
